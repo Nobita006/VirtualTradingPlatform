@@ -1,5 +1,10 @@
 # Virtual Trading Platform (Indian Stocks)
 
+## Screenshot
+
+<img width="1920" height="1080" alt="{FA3449C0-34B7-4CD6-89C2-6A01D931BBBA}" src="https://github.com/user-attachments/assets/ad8f4032-9dd8-4173-9983-ec8cf0cca9c7" />
+
+
 ## 1. Project Overview
 This is a comprehensive **Virtual Trading Platform** designed for the Indian Stock Market (NSE/BSE). It allows users to practice trading strategies using virtual money (Paper Trading) in a risk-free environment. The platform provides real-time stock data, interactive charts, portfolio tracking, and advanced trading features like Short Selling and Limit Orders.
 
