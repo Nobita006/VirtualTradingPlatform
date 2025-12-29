@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Virtual Trading</title>
+    <link rel="manifest" href="/manifest.json">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Switch to ApexCharts for robustness -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: none; margin-bottom: 20px; }
+        .text-green { color: #198754; }
+        .text-red { color: #dc3545; }
+        .autocomplete-items { position: absolute; border: 1px solid #d4d4d4; z-index: 99; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; }
+        .autocomplete-items div { padding: 10px; cursor: pointer; background-color: #fff; border-bottom: 1px solid #eee; }
+        .autocomplete-items div:hover { background-color: #e9e9e9; }
+        .live-indicator { display: inline-block; width: 10px; height: 10px; background-color: #dc3545; border-radius: 50%; margin-right: 5px; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .live-active { background-color: #198754; }
+        .news-item { font-size: 0.9rem; border-bottom: 1px solid #eee; padding: 8px 0; }
+        .news-item a { text-decoration: none; color: #333; }
+        .news-item a:hover { color: #0d6efd; }
+        #chart-container { min-height: 400px; width: 100%; background: #fff; }
+        #chart-message { text-align: center; padding-top: 180px; color: #888; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">Virtual Trading (India)</a>
+            <div class="d-flex text-white align-items-center">
+                <span class="me-3"><span id="live-dot" class="live-indicator"></span> <span id="market-status">Offline</span></span>
+                <span class="me-3">Cash: ₹<span id="nav-cash">0.00</span></span>
+                <button class="btn btn-sm btn-light text-primary" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#dashboard">Dashboard</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#watchlist" onclick="fetchWatchlist()">Watchlist</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#history" onclick="fetchHistory()">History</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#limit-orders" onclick="fetchLimitOrders()">Limit Orders</button></li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- DASHBOARD TAB -->
+            <div class="tab-pane fade show active" id="dashboard">
+                <div class="row">
+                    <div class="col-md-8">
+                        <!-- Portfolio -->
+                        <div class="card">
+                            <div class="card-header bg-white d-flex justify-content-between">
+                                <h5 class="mb-0">Portfolio</h5>
+                                <small class="text-muted">Auto-updates every 5s</small>
+                            </div>
+                            <div class="card-body">
+                                <h3 class="text-center mb-4">Total Value: ₹<span id="total-value">Loading...</span></h3>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead><tr><th>Symbol</th><th>Qty</th><th>Price</th><th>Change %</th><th>Value</th><th>Action</th></tr></thead>
+                                        <tbody id="portfolio-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Chart -->
+                        <div class="card">
+                            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Price Chart</h5>
+                                <div>
+                                    <div class="btn-group btn-group-sm me-2" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changeTimeframe('1d')">1D</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changeTimeframe('1w')">1W</button>
+                                        <button type="button" class="btn btn-outline-secondary active" onclick="changeTimeframe('1m')">1M</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changeTimeframe('6m')">6M</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changeTimeframe('1y')">1Y</button>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="reloadChart()">Reload</button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="chart-container">
+                                    <div id="chart-message">Select a stock to view chart</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <!-- Trade Box -->
+                        <div class="card">
+                            <div class="card-header bg-white"><h5>Trade</h5></div>
+                            <div class="card-body">
+                                <div class="mb-3 position-relative">
+                                    <label>Search Stock</label>
+                                    <input type="text" id="symbol-search" class="form-control" placeholder="e.g. RELIANCE" autocomplete="off">
+                                    <div id="autocomplete-list" class="autocomplete-items"></div>
+                                </div>
+                                <div id="quote-display" class="d-none mb-3 p-2 bg-light rounded">
+                                    <div class="d-flex justify-content-between">
+                                        <strong id="quote-symbol"></strong>
+                                        <span id="quote-price"></span>
+                                    </div>
+                                    <div class="text-end small" id="quote-change"></div>
+                                </div>
+                                <div class="mb-3">
+                                    <label>Quantity</label>
+                                    <input type="number" id="trade-qty" class="form-control" value="1" min="1">
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-success" onclick="executeTrade('buy')">Buy (Long)</button>
+                                    <button class="btn btn-danger" onclick="executeTrade('sell')">Sell (Short)</button>
+                                </div>
+                                <hr>
+                                <h6>Limit Order</h6>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">₹</span>
+                                    <input type="number" id="limit-price" class="form-control" placeholder="Target Price">
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-success flex-fill" onclick="createLimitOrder('BUY')">Buy Limit</button>
+                                    <button class="btn btn-sm btn-outline-danger flex-fill" onclick="createLimitOrder('SELL')">Sell Limit</button>
+                                </div>
+                                <p id="trade-msg" class="mt-2 text-center small"></p>
+                            </div>
+                        </div>
+                        <!-- News -->
+                        <div class="card">
+                            <div class="card-header bg-white"><h5>Market News</h5></div>
+                            <div class="card-body" id="news-container">
+                                <p class="text-muted small">Select a stock to see news.</p>
+                            </div>
+                        </div>
+                        <!-- Funds -->
+                        <div class="card">
+                            <div class="card-header bg-white"><h5>Funds</h5></div>
+                            <div class="card-body">
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">₹</span>
+                                    <input type="number" id="fund-amount" class="form-control" placeholder="Amount">
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success flex-fill" onclick="manageFunds('add')">Add</button>
+                                    <button class="btn btn-sm btn-warning flex-fill" onclick="manageFunds('withdraw')">Withdraw</button>
+                                </div>
+                                <p id="fund-msg" class="small mt-1"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- WATCHLIST TAB -->
+            <div class="tab-pane fade" id="watchlist">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="input-group mb-3" style="max-width: 300px;">
+                            <input type="text" id="wl-symbol" class="form-control" placeholder="Symbol (e.g. TCS.NS)">
+                            <button class="btn btn-primary" onclick="addToWatchlist()">Add</button>
+                        </div>
+                        <table class="table">
+                            <thead><tr><th>Symbol</th><th>Price</th><th>Change %</th><th>Action</th></tr></thead>
+                            <tbody id="watchlist-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HISTORY TAB -->
+            <div class="tab-pane fade" id="history">
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table table-striped">
+                            <thead><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                            <tbody id="history-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LIMIT ORDERS TAB -->
+            <div class="tab-pane fade" id="limit-orders">
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table">
+                            <thead><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Qty</th><th>Target Price</th><th>Status</th><th>Action</th></tr></thead>
+                            <tbody id="limit-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="debug-log"></div>
+        <button class="btn btn-sm btn-link" onclick="document.getElementById('debug-log').style.display='block'">Show Debug Log</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // PWA Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        const token = localStorage.getItem('token');
+        if (!token) window.location.href = '/login.html';
+
+        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+        let currentSymbol = '';
+        let isMarketOpen = false;
+        let currentTimeframe = '1m';
+        let chart = null;
+
+        const fmtMoney = (n) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // --- AUTOCOMPLETE ---
+        const searchInput = document.getElementById('symbol-search');
+        const autocompleteList = document.getElementById('autocomplete-list');
+        searchInput.addEventListener('input', async function() {
+            const val = this.value;
+            autocompleteList.innerHTML = '';
+            if (!val) return;
+            const res = await fetch(`/api/search?q=${val}`, { headers });
+            const data = await res.json();
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${item.symbol}</strong> - ${item.name}`;
+                div.onclick = () => {
+                    searchInput.value = item.symbol;
+                    currentSymbol = item.symbol;
+                    autocompleteList.innerHTML = '';
+                    getQuote(item.symbol);
+                    loadChart(item.symbol);
+                    fetchNews(item.symbol);
+                };
+                autocompleteList.appendChild(div);
+            });
+        });
+        document.addEventListener('click', (e) => { if(e.target !== searchInput) autocompleteList.innerHTML = ''; });
+
+        // --- CORE ---
+        async function getQuote(symbol) {
+            try {
+                const res = await fetch(`/api/quote/${symbol}`, { headers });
+                if (!res.ok) throw new Error('Not found');
+                const data = await res.json();
+                document.getElementById('quote-display').classList.remove('d-none');
+                document.getElementById('quote-symbol').innerText = data.symbol;
+                document.getElementById('quote-price').innerText = `₹${fmtMoney(data.price)}`;
+                const color = data.change >= 0 ? 'text-green' : 'text-red';
+                document.getElementById('quote-change').innerHTML = `<span class="${color}">${data.change >= 0 ? '+' : ''}${fmtMoney(data.change)} (${data.change_percent.toFixed(2)}%)</span>`;
+            } catch (e) { console.error(e); }
+        }
+
+        async function fetchNews(symbol) {
+            const res = await fetch(`/api/news/${symbol}`, { headers });
+            const data = await res.json();
+            const container = document.getElementById('news-container');
+            container.innerHTML = '';
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-muted small">No news found.</p>';
+                return;
+            }
+            data.forEach(item => {
+                container.innerHTML += `<div class="news-item"><a href="${item.link}" target="_blank">${item.title}</a></div>`;
+            });
+        }
+
+        function reloadChart() {
+            if (currentSymbol) loadChart(currentSymbol);
+        }
+
+        function changeTimeframe(tf) {
+            currentTimeframe = tf;
+            document.querySelectorAll('.btn-group button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            if (currentSymbol) loadChart(currentSymbol);
+        }
+
+        async function loadChart(symbol) {
+            const chartContainer = document.getElementById('chart-container');
+            chartContainer.innerHTML = '<div id="chart-message">Loading...</div>';
+            
+            let period = '1mo';
+            let interval = '1d';
+            
+            if (currentTimeframe === '1d') { period = '1d'; interval = '5m'; }
+            else if (currentTimeframe === '1w') { period = '5d'; interval = '15m'; }
+            else if (currentTimeframe === '1m') { period = '1mo'; interval = '1d'; }
+            else if (currentTimeframe === '6m') { period = '6mo'; interval = '1d'; }
+            else if (currentTimeframe === '1y') { period = '1y'; interval = '1wk'; }
+
+            try {
+                const res = await fetch(`/api/history/${symbol}?period=${period}&interval=${interval}`, { headers });
+                const data = await res.json();
+                
+                if (!data || data.length === 0) {
+                    document.getElementById('chart-message').innerText = 'No Data Available';
+                    return;
+                }
+
+                // Clear loading message
+                chartContainer.innerHTML = '';
+
+                const options = {
+                    series: [{
+                        name: 'Price',
+                        data: data // Backend returns {x: timestamp, y: [O,H,L,C]}
+                    }],
+                    chart: {
+                        type: 'candlestick',
+                        height: 350,
+                        toolbar: { show: true }
+                    },
+                    xaxis: {
+                        type: 'datetime'
+                    },
+                    yaxis: {
+                        tooltip: {
+                            enabled: true
+                        },
+                        labels: {
+                            formatter: (value) => { return typeof value === 'number' ? value.toFixed(2) : value; }
+                        }
+                    },
+                    tooltip: {
+                        y: {
+                            formatter: (value) => { return typeof value === 'number' ? value.toFixed(2) : value; }
+                        }
+                    }
+                };
+
+                chart = new ApexCharts(chartContainer, options);
+                chart.render();
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('chart-message').innerText = 'Error Loading Chart';
+            }
+        }
+
+        async function executeTrade(type) {
+            const qty = parseInt(document.getElementById('trade-qty').value);
+            if (!currentSymbol || qty <= 0) return alert('Invalid input');
+            const res = await fetch(`/api/${type}`, { method: 'POST', headers, body: JSON.stringify({ symbol: currentSymbol, quantity: qty }) });
+            const data = await res.json();
+            document.getElementById('trade-msg').innerText = res.ok ? data.message : data.detail;
+            if (res.ok) fetchPortfolio();
+        }
+
+        async function createLimitOrder(type) {
+            const qty = parseInt(document.getElementById('trade-qty').value);
+            const price = parseFloat(document.getElementById('limit-price').value);
+            if (!currentSymbol || qty <= 0 || !price) return alert('Invalid input');
+            const res = await fetch('/api/limit-orders', { method: 'POST', headers, body: JSON.stringify({ symbol: currentSymbol, quantity: qty, target_price: price, type }) });
+            alert(res.ok ? 'Order Created' : 'Error');
+        }
+
+        async function fetchPortfolio() {
+            const res = await fetch('/api/portfolio', { headers });
+            const data = await res.json();
+            document.getElementById('nav-cash').innerText = fmtMoney(data.cash);
+            document.getElementById('total-value').innerText = fmtMoney(data.total_portfolio_value);
+            const tbody = document.getElementById('portfolio-body');
+            tbody.innerHTML = '';
+            data.holdings.forEach(h => {
+                const color = h.change_percent >= 0 ? 'text-green' : 'text-red';
+                const typeLabel = h.quantity < 0 ? '<span class="badge bg-warning text-dark">SHORT</span>' : '<span class="badge bg-success">LONG</span>';
+                tbody.innerHTML += `<tr>
+                    <td>${h.symbol} ${typeLabel}</td>
+                    <td>${Math.abs(h.quantity)}</td>
+                    <td>₹${fmtMoney(h.current_price)}</td>
+                    <td class="${color}">${h.change_percent.toFixed(2)}%</td>
+                    <td>₹${fmtMoney(h.total_value)}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="quickSell('${h.symbol}', ${Math.abs(h.quantity)}, ${h.quantity < 0})">${h.quantity < 0 ? 'Cover' : 'Sell'}</button></td>
+                </tr>`;
+            });
+        }
+
+        async function quickSell(s, q, isShort) {
+            currentSymbol = s;
+            document.getElementById('trade-qty').value = q;
+            executeTrade(isShort ? 'buy' : 'sell');
+        }
+
+        async function manageFunds(action) {
+            const amount = parseFloat(document.getElementById('fund-amount').value);
+            if (!amount) return;
+            const res = await fetch(`/api/funds/${action}`, { method: 'POST', headers, body: JSON.stringify({ amount }) });
+            if (res.ok) { fetchPortfolio(); document.getElementById('fund-msg').innerText = 'Success'; }
+        }
+
+        // --- TABS ---
+        async function fetchHistory() {
+            const res = await fetch('/api/transactions', { headers });
+            const data = await res.json();
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '';
+            data.forEach(t => {
+                tbody.innerHTML += `<tr>
+                    <td>${new Date(t.timestamp * 1000).toLocaleString()}</td>
+                    <td class="${t.type === 'BUY' ? 'text-success' : 'text-danger'}">${t.type}</td>
+                    <td>${t.symbol}</td><td>${t.quantity}</td><td>₹${fmtMoney(t.price)}</td><td>₹${fmtMoney(t.price * t.quantity)}</td>
+                </tr>`;
+            });
+        }
+
+        async function fetchLimitOrders() {
+            const res = await fetch('/api/limit-orders', { headers });
+            const data = await res.json();
+            const tbody = document.getElementById('limit-body');
+            tbody.innerHTML = '';
+            data.forEach(o => {
+                tbody.innerHTML += `<tr>
+                    <td>${new Date(o.created_at * 1000).toLocaleString()}</td>
+                    <td>${o.type}</td><td>${o.symbol}</td><td>${o.quantity}</td><td>₹${fmtMoney(o.target_price)}</td>
+                    <td>${o.status}</td>
+                    <td>${o.status === 'PENDING' ? `<button class="btn btn-sm btn-danger" onclick="cancelOrder(${o.id})">Cancel</button>` : ''}</td>
+                </tr>`;
+            });
+        }
+        async function cancelOrder(id) { await fetch(`/api/limit-orders/${id}`, { method: 'DELETE', headers }); fetchLimitOrders(); }
+
+        async function fetchWatchlist() {
+            const res = await fetch('/api/watchlist', { headers });
+            const data = await res.json();
+            const tbody = document.getElementById('watchlist-body');
+            tbody.innerHTML = '';
+            data.forEach(w => {
+                tbody.innerHTML += `<tr>
+                    <td>${w.symbol}</td><td>₹${fmtMoney(w.price)}</td>
+                    <td class="${w.change_percent >= 0 ? 'text-green' : 'text-red'}">${w.change_percent.toFixed(2)}%</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="removeFromWatchlist('${w.symbol}')">Remove</button></td>
+                </tr>`;
+            });
+        }
+        async function addToWatchlist() {
+            const s = document.getElementById('wl-symbol').value; if(!s) return;
+            await fetch('/api/watchlist', { method: 'POST', headers, body: JSON.stringify({ symbol: s }) });
+            fetchWatchlist();
+        }
+        async function removeFromWatchlist(s) { await fetch(`/api/watchlist/${s}`, { method: 'DELETE', headers }); fetchWatchlist(); }
+
+        function logout() { localStorage.removeItem('token'); window.location.href = '/login.html'; }
+
+        // --- REALTIME UPDATES ---
+        function startRealtimeUpdates() {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const ist = new Date(utc + (3600000 * 5.5));
+            const hours = ist.getHours();
+            const minutes = ist.getMinutes();
+            const time = hours * 60 + minutes;
+            
+            if (time >= 555 && time <= 930 && ist.getDay() !== 0 && ist.getDay() !== 6) {
+                isMarketOpen = true;
+                document.getElementById('market-status').innerText = "Market Open";
+                document.getElementById('live-dot').classList.add('live-active');
+            } else {
+                isMarketOpen = false;
+                document.getElementById('market-status').innerText = "Market Closed";
+                document.getElementById('live-dot').classList.remove('live-active');
+            }
+
+            setInterval(() => {
+                fetchPortfolio();
+                if (currentSymbol) getQuote(currentSymbol);
+                if (document.querySelector('#watchlist').classList.contains('active')) fetchWatchlist();
+            }, 5000);
+        }
+
+        // Init
+        fetchPortfolio();
+        startRealtimeUpdates();
+    </script>
+</body>
+</html>
